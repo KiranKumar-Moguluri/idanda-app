@@ -119,7 +119,7 @@ export default function HomeScreen() {
     <View style={styles.container}>
       <Text style={styles.title}>iDanda Jobs & Tasks</Text>
 
-      <TouchableOpacity style={styles.createButton} onPress={() => router.push('/createPost')}>
+      <TouchableOpacity style={styles.createButton} onPress={() => router.push('/tabs/createPost')}>
         <Text style={styles.createButtonText}>+ Create New Post</Text>
       </TouchableOpacity>
 

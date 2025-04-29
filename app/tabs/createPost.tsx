@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { auth, db } from '../services/firebaseConfig';
-import { showError } from '../utils/errorHandler';
+import { auth, db } from '../../services/firebaseConfig';
+import { showError } from '../../utils/errorHandler';
 
 const categories = ['Home', 'Ride', 'Mechanical', 'Technical', 'IT/Software Support'];
 

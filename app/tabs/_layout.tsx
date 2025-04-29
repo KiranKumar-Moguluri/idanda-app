@@ -16,7 +16,7 @@ export default function TabLayout() {
           <Text style={[styles.navText, pathname.includes('home') && styles.activeText]}>Home</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => router.push('/createPost')} style={styles.navItem}>
+        <TouchableOpacity onPress={() => router.push('/tabs/createPost')} style={styles.navItem}>
           <Ionicons name="add-circle-outline" size={24} color={pathname.includes('createPost') ? '#4C8BF5' : '#555'} />
           <Text style={[styles.navText, pathname.includes('createPost') && styles.activeText]}>Create Post</Text>
         </TouchableOpacity>
