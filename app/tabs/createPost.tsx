@@ -1,86 +1,180 @@
+// /app/(tabs)/createPost.tsx
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  TextInput,
+  StyleSheet,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  Alert,
+  SafeAreaView,
+} from 'react-native';
 import { useRouter } from 'expo-router';
+import { db, auth } from '../../services/firebaseConfig';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { auth, db } from '../../services/firebaseConfig';
-import { showError } from '../../utils/errorHandler';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 
-const categories = ['Home', 'Ride', 'Mechanical', 'Technical', 'IT/Software Support'];
+// Extract the exact union of valid Ionicons names:
+type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
+
+const categories: { key: string; icon: IoniconsName }[] = [
+  { key: 'Ride', icon: 'car-outline' },
+  { key: 'Home', icon: 'home-outline' },
+  { key: 'Mechanical', icon: 'construct-outline' },
+  { key: 'Technical', icon: 'settings-outline' },
+  { key: 'IT', icon: 'laptop-outline' },
+];
 
 export default function CreatePostScreen() {
   const router = useRouter();
-  const [category, setCategory] = useState('');
-  const [description, setDescription] = useState('');
+  const [category, setCategory] = useState<string>('');
+  const [description, setDescription] = useState<string>('');
+  const [submitting, setSubmitting] = useState<boolean>(false);
 
-  const handleCreatePost = async () => {
+  const handleSubmit = async () => {
     if (!category || !description.trim()) {
-      Alert.alert('Error', 'Please select a category and enter the requirement.');
+      Alert.alert('Missing Fields', 'Please select a category and enter a description.');
       return;
     }
-
+    setSubmitting(true);
     try {
-      const currentUser = auth.currentUser;
-      if (!currentUser) {
-        Alert.alert('Error', 'User not logged in.');
-        return;
-      }
+      const user = auth.currentUser;
+      if (!user) throw new Error('Not authenticated');
 
       await addDoc(collection(db, 'posts'), {
         category,
-        description,
-        creatorId: currentUser.uid,
-        creatorEmail: currentUser.email,
+        description: description.trim(),
+        creatorId: user.uid,
         createdAt: serverTimestamp(),
+        status: 'Active',
         interestedUsers: [],
       });
 
-      Alert.alert('Success', 'Your post has been created!');
-      router.replace('/tabs/home'); // ✅ After posting, go back to home (post list)
-    } catch (error) {
-      showError(error, 'Post Creation Failed');
+      Alert.alert('Posted!', 'Your task has been created.');
+      router.replace({ pathname: '/tabs/home' });
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to create post.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Create a New Post</Text>
+    <SafeAreaView style={styles.safe}>
+      <KeyboardAvoidingView
+        behavior={Platform.select({ ios: 'padding', android: undefined })}
+        style={styles.flex}
+      >
+        <ScrollView contentContainerStyle={styles.container}>
+          <Text style={styles.header}>Create a Task</Text>
 
-      <Text style={styles.label}>Select Category:</Text>
-      {categories.map((item) => (
-        <TouchableOpacity
-          key={item}
-          style={[styles.categoryButton, category === item && styles.selectedCategory]}
-          onPress={() => setCategory(item)}
-        >
-          <Text style={styles.categoryText}>{item}</Text>
-        </TouchableOpacity>
-      ))}
+          <Text style={styles.label}>Select Category</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.categoryRow}
+          >
+            {categories.map((c) => (
+              <TouchableOpacity
+                key={c.key}
+                style={[
+                  styles.categoryItem,
+                  category === c.key && styles.categoryItemActive,
+                ]}
+                onPress={() => setCategory(c.key)}
+              >
+                <Ionicons
+                  name={c.icon}
+                  size={24}
+                  color={category === c.key ? '#fff' : '#4C8BF5'}
+                />
+                <Text
+                  style={[
+                    styles.categoryText,
+                    category === c.key && styles.categoryTextActive,
+                  ]}
+                >
+                  {c.key}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
 
-      <Text style={styles.label}>Requirement / Task Description:</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Describe your need..."
-        multiline
-        numberOfLines={4}
-        onChangeText={setDescription}
-        value={description}
-      />
+          <Text style={[styles.label, { marginTop: 20 }]}>What do you need done?</Text>
+          <TextInput
+            style={styles.textArea}
+            placeholder="Describe your task..."
+            multiline
+            numberOfLines={6}
+            onChangeText={setDescription}
+            value={description}
+            editable={!submitting}
+          />
 
-      <TouchableOpacity style={styles.postButton} onPress={handleCreatePost}>
-        <Text style={styles.postButtonText}>Post</Text>
-      </TouchableOpacity>
-    </View>
+          <TouchableOpacity
+            style={styles.submitWrapper}
+            onPress={handleSubmit}
+            disabled={submitting}
+          >
+            <LinearGradient
+              colors={['#4C8BF5', '#6AC8F5']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.submitButton}
+            >
+              <Text style={styles.submitText}>
+                {submitting ? 'Posting...' : 'Post Task'}
+              </Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f6f7fb', padding: 20 },
-  title: { fontSize: 24, fontWeight: 'bold', color: '#333', textAlign: 'center', marginBottom: 20 },
-  label: { fontSize: 16, color: '#555', marginTop: 15 },
-  input: { backgroundColor: '#fff', borderRadius: 10, borderColor: '#ddd', borderWidth: 1, padding: 12, marginTop: 10, marginBottom: 20 },
-  categoryButton: { padding: 12, borderRadius: 10, borderColor: '#4C8BF5', borderWidth: 1, marginTop: 10 },
-  selectedCategory: { backgroundColor: '#4C8BF5' },
-  categoryText: { color: '#333', textAlign: 'center' },
-  postButton: { backgroundColor: '#4C8BF5', paddingVertical: 12, borderRadius: 10, alignItems: 'center', marginTop: 30 },
-  postButtonText: { color: '#fff', fontWeight: '600', fontSize: 16 },
+  safe: { flex: 1, backgroundColor: '#f6f7fb' },
+  flex: { flex: 1 },
+  container: { padding: 20 },
+  header: { fontSize: 26, fontWeight: '700', color: '#333', marginBottom: 20 },
+  label: { fontSize: 16, fontWeight: '600', color: '#555', marginBottom: 10 },
+  categoryRow: { paddingBottom: 10 },
+  categoryItem: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    marginRight: 12,
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#4C8BF5',
+    width: 80,
+  },
+  categoryItemActive: {
+    backgroundColor: '#4C8BF5',
+  },
+  categoryText: { marginTop: 6, fontSize: 14, color: '#4C8BF5' },
+  categoryTextActive: { color: '#fff', fontWeight: '600' },
+  textArea: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 15,
+    textAlignVertical: 'top',
+    borderColor: '#ddd',
+    borderWidth: 1,
+    fontSize: 16,
+    color: '#333',
+  },
+  submitWrapper: { marginTop: 30 },
+  submitButton: {
+    paddingVertical: 15,
+    borderRadius: 30,
+    alignItems: 'center',
+  },
+  submitText: { color: '#fff', fontSize: 18, fontWeight: '700' },
 });

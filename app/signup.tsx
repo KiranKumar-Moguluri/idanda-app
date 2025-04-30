@@ -1,116 +1,225 @@
+// /app/signup.tsx
+
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView } from 'react-native';
+import {
+  View,
+  Text,
+  TextInput,
+  StyleSheet,
+  TouchableOpacity,
+  Alert,
+  ActivityIndicator,
+  ScrollView,
+} from 'react-native';
 import { useRouter } from 'expo-router';
-import { createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
 import { auth, db } from '../services/firebaseConfig';
-import { collection, doc, setDoc } from 'firebase/firestore';
-import { showError } from '../utils/errorHandler';
+import {
+  createUserWithEmailAndPassword,
+  sendEmailVerification,
+  updateProfile,
+} from 'firebase/auth';
+import { setDoc, doc, serverTimestamp } from 'firebase/firestore';
 
 export default function SignupScreen() {
   const router = useRouter();
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [email, setEmail] = useState('');
-  const [address, setAddress] = useState('');
-  const [password, setPassword] = useState('');
+  const [firstName, setFirstName]           = useState('');
+  const [lastName, setLastName]             = useState('');
+  const [phone, setPhone]                   = useState('');
+  const [address, setAddress]               = useState('');
+  const [email, setEmail]                   = useState('');
+  const [password, setPassword]             = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading]               = useState(false);
 
   const handleSignup = async () => {
-    if (!firstName || !lastName || !email || !password || !confirmPassword || !address) {
-      Alert.alert('Error', 'Please fill in all fields.');
-      return;
+    // 1) Basic front-end validation
+    if (
+      !firstName.trim() ||
+      !lastName.trim() ||
+      !phone.trim() ||
+      !address.trim() ||
+      !email.trim() ||
+      !password ||
+      !confirmPassword
+    ) {
+      return Alert.alert('Missing Fields', 'Please fill out all fields.');
+    }
+    if (password.length < 6) {
+      return Alert.alert('Weak Password', 'Password must be at least 6 characters.');
     }
     if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match.');
-      return;
+      return Alert.alert('Password Mismatch', 'Passwords do not match.');
     }
 
+    setLoading(true);
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
+      // 2) Create user in Firebase Auth
+      const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+      const user = cred.user;
 
-      await sendEmailVerification(user);
-      Alert.alert('Signup Successful!', 'Please verify your email before logging in.');
-
-      // ✅ Save user profile to Firestore
-      await setDoc(doc(db, 'users', user.uid), {
-        firstName,
-        lastName,
-        address,
-        email,
-        createdAt: new Date(),
+      // 3) Update user.displayName
+      await updateProfile(user, {
+        displayName: `${firstName.trim()} ${lastName.trim()}`,
       });
 
-      router.replace('/'); // ✅ Redirect to login/landing after signup
-    } catch (error) {
-      showError(error, 'Signup Failed');
+      // 4) Store additional profile info in Firestore
+      await setDoc(doc(db, 'users', user.uid), {
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        phone: phone.trim(),
+        address: address.trim(),
+        createdAt: serverTimestamp(),
+      });
+
+      // 5) Send email verification
+      await sendEmailVerification(user);
+
+      Alert.alert(
+        'Signup Successful',
+        'A verification email has been sent. Please verify before logging in.'
+      );
+
+      // 6) Redirect to login screen
+      router.replace('/login');
+    } catch (err: any) {
+      // 7) Debug and user-friendly error handling
+      console.error('Signup error:', err.code, err.message);
+      let message = 'Signup failed. Please try again.';
+      switch (err.code) {
+        case 'auth/email-already-in-use':
+          message = 'This email is already registered. Try logging in.';
+          break;
+        case 'auth/invalid-email':
+          message = 'Please enter a valid email address.';
+          break;
+        case 'auth/weak-password':
+          message = 'Password too weak—use at least 6 characters.';
+          break;
+      }
+      Alert.alert('Error', message);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Sign Up for iDanda</Text>
+      <Text style={styles.title}>Create an Account</Text>
 
       <TextInput
         style={styles.input}
         placeholder="First Name"
-        onChangeText={setFirstName}
         value={firstName}
+        onChangeText={setFirstName}
       />
       <TextInput
         style={styles.input}
         placeholder="Last Name"
-        onChangeText={setLastName}
         value={lastName}
+        onChangeText={setLastName}
       />
       <TextInput
         style={styles.input}
-        placeholder="Email"
-        keyboardType="email-address"
-        onChangeText={setEmail}
-        value={email}
+        placeholder="Phone Number"
+        keyboardType="phone-pad"
+        value={phone}
+        onChangeText={setPhone}
       />
       <TextInput
         style={styles.input}
         placeholder="Address"
-        onChangeText={setAddress}
         value={address}
+        onChangeText={setAddress}
+      />
+
+      <TextInput
+        style={styles.input}
+        placeholder="Email"
+        keyboardType="email-address"
+        autoCapitalize="none"
+        value={email}
+        onChangeText={setEmail}
       />
       <TextInput
         style={styles.input}
-        placeholder="Password"
+        placeholder="Password (min 6 chars)"
         secureTextEntry
-        onChangeText={setPassword}
         value={password}
+        onChangeText={setPassword}
       />
       <TextInput
         style={styles.input}
         placeholder="Confirm Password"
         secureTextEntry
-        onChangeText={setConfirmPassword}
         value={confirmPassword}
+        onChangeText={setConfirmPassword}
       />
 
-      <TouchableOpacity style={styles.button} onPress={handleSignup}>
-        <Text style={styles.buttonText}>Sign Up</Text>
+      <TouchableOpacity
+        style={[styles.button, loading && { opacity: 0.7 }]}
+        onPress={handleSignup}
+        disabled={loading}
+      >
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.buttonText}>Sign Up</Text>
+        )}
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={() => router.push('/login')}>
-        <Text style={styles.link}>Already have an account? Login</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity onPress={() => router.push('/')}>
-        <Text style={styles.link}>Back to Home</Text>
-      </TouchableOpacity>
+      <View style={styles.footer}>
+        <Text style={styles.footerText}>Already have an account?</Text>
+        <TouchableOpacity onPress={() => router.replace('/login')}>
+          <Text style={styles.link}> Log In</Text>
+        </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, backgroundColor: '#f6f7fb', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 30, paddingVertical: 50 },
-  title: { fontSize: 28, fontWeight: '700', color: '#333', marginBottom: 20 },
-  input: { backgroundColor: '#fff', width: '100%', paddingVertical: 14, paddingHorizontal: 16, borderRadius: 10, borderColor: '#ddd', borderWidth: 1, marginBottom: 15, fontSize: 16 },
-  button: { backgroundColor: '#4C8BF5', paddingVertical: 15, paddingHorizontal: 50, borderRadius: 12, marginTop: 10, shadowColor: '#4C8BF5', shadowOpacity: 0.3, shadowOffset: { width: 0, height: 5 }, shadowRadius: 10, elevation: 3 },
-  buttonText: { color: '#fff', fontSize: 18, fontWeight: '600' },
-  link: { marginTop: 20, color: '#4C8BF5', fontSize: 16, textDecorationLine: 'underline' },
+  container: {
+    padding: 20,
+    paddingTop: 60,
+    backgroundColor: '#e9f0fc',
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#333',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  input: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  button: {
+    backgroundColor: '#4C8BF5',
+    padding: 15,
+    borderRadius: 30,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 20,
+  },
+  footerText: { color: '#555' },
+  link: {
+    color: '#4C8BF5',
+    fontWeight: '600',
+  },
 });
