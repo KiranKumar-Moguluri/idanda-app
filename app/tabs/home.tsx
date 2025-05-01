@@ -1,5 +1,5 @@
-// /app/(tabs)/home.tsx
-import React, { useEffect, useState } from 'react';
+// app/(tabs)/home.tsx
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,9 @@ import {
   FlatList,
   ActivityIndicator,
   Dimensions,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Redirect, useRouter } from 'expo-router';
 import { auth, db } from '../../services/firebaseConfig';
@@ -21,9 +24,13 @@ import {
   arrayUnion,
   Timestamp,
   getDoc,
+  serverTimestamp,
+  setDoc,
+  addDoc,
 } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import { showError } from '../../utils/errorHandler';
+import ChatDrawer from './ChatDrawer'; 
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -34,39 +41,38 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [creatorNames, setCreatorNames] = useState<Record<string, string>>({});
 
-  // 1) Listen for posts
+  // chat drawer state
+  const [drawerVisible, setDrawerVisible] = useState(false);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [activeOtherId, setActiveOtherId] = useState<string | null>(null);
+
+  // Load posts
   useEffect(() => {
     const q = query(collection(db, 'posts'), orderBy('createdAt', 'desc'));
-    const unsub = onSnapshot(q, snapshot => {
+    const unsub = onSnapshot(q, snap => {
       const data: any[] = [];
-      snapshot.forEach(snap => data.push({ id: snap.id, ...snap.data() }));
+      snap.forEach(d => data.push({ id: d.id, ...d.data() }));
       setPosts(data);
       setLoading(false);
     });
     return unsub;
   }, []);
 
-  // 2) Fetch any missing creator names
+  // Fetch creator names
   useEffect(() => {
     posts.forEach(post => {
       const uid = post.creatorId;
       if (uid && !creatorNames[uid]) {
         getDoc(doc(db, 'users', uid))
-          .then(userSnap => {
-            if (userSnap.exists()) {
-              const { firstName, lastName } = userSnap.data();
-              setCreatorNames(prev => ({
-                ...prev,
-                [uid]: `${firstName} ${lastName}`,
-              }));
+          .then(snap => {
+            if (snap.exists()) {
+              const { firstName, lastName } = snap.data();
+              setCreatorNames(prev => ({ ...prev, [uid]: `${firstName} ${lastName}` }));
             } else {
-              setCreatorNames(prev => ({ ...prev, [uid]: 'Unknown User' }));
+              setCreatorNames(prev => ({ ...prev, [uid]: 'Unknown' }));
             }
           })
-          .catch(err => {
-            console.error('Error fetching user', err);
-            setCreatorNames(prev => ({ ...prev, [uid]: 'Unknown User' }));
-          });
+          .catch(() => setCreatorNames(prev => ({ ...prev, [uid]: 'Unknown' })));
       }
     });
   }, [posts]);
@@ -83,12 +89,19 @@ export default function HomeScreen() {
   };
 
   const formatTimeAgo = (ts?: Timestamp | null) => {
-    if (!ts || typeof ts.seconds !== 'number') return 'Just now';
+    if (!ts?.seconds) return 'Just now';
     const diff = Timestamp.now().seconds - ts.seconds;
     if (diff < 60) return 'Just now';
     if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
     return `${Math.floor(diff / 86400)}d ago`;
+  };
+
+  const openChat = (otherId: string) => {
+    const chatId = [currentUser.uid, otherId].sort().join('_');
+    setActiveChatId(chatId);
+    setActiveOtherId(otherId);
+    setDrawerVisible(true);
   };
 
   const renderPost = ({ item }: { item: any }) => {
@@ -107,7 +120,7 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Body Preview */}
+        {/* Body */}
         <Text style={styles.bodyText} numberOfLines={5} ellipsizeMode="tail">
           {item.description}
         </Text>
@@ -116,64 +129,81 @@ export default function HomeScreen() {
         <View
           style={[
             styles.footer,
-            isCreator ? { justifyContent: 'flex-start' } : { justifyContent: 'flex-end' },
+            isCreator
+              ? { justifyContent: 'flex-start' }
+              : { justifyContent: 'space-between' },
           ]}
         >
           {isCreator ? (
-            <Text style={styles.count}>{item.interestedUsers?.length || 0} interested</Text>
+            <Text style={styles.count}>
+              {item.interestedUsers?.length || 0} interested
+            </Text>
           ) : (
-            <TouchableOpacity
-              style={[styles.button, already && styles.buttonDisabled]}
-              disabled={already}
-              onPress={() => handleAccept(item.id, item.interestedUsers || [])}
-            >
-              <Ionicons
-                name={already ? 'checkmark-circle' : 'heart-outline'}
-                size={20}
-                color={already ? '#4CAF50' : '#555'}
-              />
-              <Text style={[styles.buttonText, already && styles.buttonTextDisabled]}>
-                {already ? 'Accepted' : 'Accept'}
-              </Text>
-            </TouchableOpacity>
+            <>
+              <TouchableOpacity
+                style={[styles.button, already && styles.buttonDisabled]}
+                disabled={already}
+                onPress={() => handleAccept(item.id, item.interestedUsers || [])}
+              >
+                <Ionicons
+                  name={already ? 'checkmark-circle' : 'heart-outline'}
+                  size={20}
+                  color={already ? '#4CAF50' : '#555'}
+                />
+                <Text style={[styles.buttonText, already && styles.buttonTextDisabled]}>
+                  {already ? 'Accepted' : 'Accept'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.messageButton}
+                onPress={() => openChat(item.creatorId)}
+              >
+                <Text style={styles.messageText}>Message</Text>
+              </TouchableOpacity>
+            </>
           )}
         </View>
       </View>
     );
   };
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#4C8BF5" />
-      </View>
-    );
-  }
-
   return (
-    <FlatList
-      contentContainerStyle={styles.list}
-      data={posts}
-      keyExtractor={item => item.id}
-      renderItem={renderPost}
-      ListEmptyComponent={<Text style={styles.empty}>No posts yet.</Text>}
-    />
+    <View style={styles.container}>
+      {loading ? (
+        <ActivityIndicator size="large" color="#4C8BF5" style={{ marginTop: 50 }} />
+      ) : (
+        <FlatList
+          contentContainerStyle={styles.list}
+          data={posts}
+          keyExtractor={item => item.id}
+          renderItem={renderPost}
+          ListEmptyComponent={<Text style={styles.empty}>No posts yet.</Text>}
+        />
+      )}
+
+      {drawerVisible && activeChatId && activeOtherId && (
+        <ChatDrawer
+          chatId={activeChatId}
+          otherUserId={activeOtherId}
+          onClose={() => setDrawerVisible(false)}
+        />
+      )}
+    </View>
   );
 }
 
-const { width } = Dimensions.get('window');
-const CARD_WIDTH = Math.min(width * 0.9, 600);
-const CARD_MIN_HEIGHT = 240;
+const { width, height } = Dimensions.get('window');
+const CARD_WIDTH      = Math.min(width * 0.9, 600);
+const CARD_MIN_HEIGHT = 180;
 
 const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#f2f3f5' },
   list: {
     paddingVertical: 12,
     alignItems: 'center',
-    backgroundColor: '#f2f3f5',
   },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   empty: { textAlign: 'center', marginTop: 20, color: '#999' },
-
   card: {
     width: CARD_WIDTH,
     minHeight: CARD_MIN_HEIGHT,
@@ -188,23 +218,17 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 3,
   },
-
   header: { flexDirection: 'row', marginBottom: 12 },
   headerText: { marginLeft: 12, justifyContent: 'center' },
   username: { fontSize: 16, fontWeight: '600', color: '#333' },
   time: { fontSize: 12, color: '#777', marginTop: 4 },
-
   bodyText: {
     fontSize: 14,
     color: '#444',
     lineHeight: 20,
     marginBottom: 12,
   },
-
-  footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
+  footer: { flexDirection: 'row', alignItems: 'center' },
 
   button: { flexDirection: 'row', alignItems: 'center' },
   buttonDisabled: { opacity: 0.6 },
@@ -212,4 +236,13 @@ const styles = StyleSheet.create({
   buttonTextDisabled: { color: '#4CAF50' },
 
   count: { fontSize: 12, color: '#777' },
+
+  messageButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: '#4C8BF5',
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  messageText: { color: '#fff', fontWeight: '600' },
 });

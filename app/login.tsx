@@ -1,171 +1,216 @@
+// app/login.tsx
+
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Image, Animated } from 'react-native';
-import { auth } from '../services/firebaseConfig';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import {
+  SafeAreaView,
+  ScrollView,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  Image,
+  Animated,
+  Dimensions,
+} from 'react-native';
 import { useRouter } from 'expo-router';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 import { LinearGradient } from 'expo-linear-gradient';
+import { auth } from '../services/firebaseConfig';
 import { showError } from '../utils/errorHandler';
+
+const { width } = Dimensions.get('window');
+// Card maxes at 95% of screen (capped at 540px)
+const CARD_WIDTH = Math.min(width * 0.95, 540);
+// Button spans 90% of screen width
+const BUTTON_WIDTH = width * 0.1;
 
 export default function LoginScreen() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const scaleValue = useState(new Animated.Value(1))[0];
+  const scaleAnim = useState(new Animated.Value(1))[0];
 
   const handleLogin = async () => {
     if (!email || !password) {
       Alert.alert('Error', 'Please enter both email and password.');
       return;
     }
-
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
-
+      const { user } = await signInWithEmailAndPassword(auth, email, password);
       if (!user.emailVerified) {
-        Alert.alert('Warning', 'Please verify your email before logging in.');
+        Alert.alert('Verify Email', 'Please verify your email before logging in.');
         return;
       }
-
-      Alert.alert('Login Successful!', `Welcome back, ${user.email}`);
       router.replace('/tabs/home');
-    } catch (error) {
-      showError(error, 'Login Failed');
+    } catch (err) {
+      showError(err, 'Login Failed');
     }
   };
 
-  const animateButton = () => {
+  const animateAndSubmit = () => {
     Animated.sequence([
-      Animated.timing(scaleValue, { toValue: 0.95, duration: 100, useNativeDriver: true }),
-      Animated.timing(scaleValue, { toValue: 1, duration: 100, useNativeDriver: true }),
+      Animated.timing(scaleAnim, {
+        toValue: 0.95,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scaleAnim, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true,
+      }),
     ]).start(handleLogin);
   };
 
   return (
-    <View style={styles.container}>
-      <Image source={require('../assets/logo.png')} style={styles.logo} />
+    <LinearGradient
+      colors={['#4C8BF5', '#6AC8F5']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={styles.background}
+    >
+      <SafeAreaView style={styles.safe}>
+        <ScrollView contentContainerStyle={styles.scroll}>
+          <View style={styles.card}>
+            <Image source={require('../assets/logo.png')} style={styles.logo} />
 
-      <Text style={styles.title}>Welcome Back!</Text>
-      <Text style={styles.subtitle}>Let’s get things done together.</Text>
+            <Text style={styles.title}>Welcome to iDanda</Text>
+            <Text style={styles.subtitle}>Connect & earn 💼</Text>
 
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          keyboardType="email-address"
-          onChangeText={setEmail}
-          value={email}
-        />
-      </View>
+            <View style={styles.inputWrapper}>
+              <TextInput
+                style={styles.input}
+                placeholder="Email"
+                placeholderTextColor="#999"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                value={email}
+                onChangeText={setEmail}
+              />
+            </View>
 
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          secureTextEntry
-          onChangeText={setPassword}
-          value={password}
-        />
-      </View>
+            <View style={styles.inputWrapper}>
+              <TextInput
+                style={styles.input}
+                placeholder="Password"
+                placeholderTextColor="#999"
+                secureTextEntry
+                value={password}
+                onChangeText={setPassword}
+              />
+            </View>
 
-      <Animated.View style={[styles.gradientButton, { transform: [{ scale: scaleValue }] }]}>
-        <TouchableOpacity onPress={animateButton} style={{ width: '100%' }}>
-          <LinearGradient
-            colors={['#4C8BF5', '#6AC8F5']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.innerGradient}
-          >
-            <Text style={styles.buttonText}>Login</Text>
-          </LinearGradient>
-        </TouchableOpacity>
-      </Animated.View>
+            <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+              <TouchableOpacity onPress={animateAndSubmit}>
+                <View style={styles.loginBtn}>
+                  <Text style={styles.loginText}>Log In</Text>
+                </View>
+              </TouchableOpacity>
+            </Animated.View>
 
-      <TouchableOpacity onPress={() => router.push('/signup')}>
-        <Text style={styles.link}>Don't have an account? Sign Up</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity onPress={() => router.push('/')}>
-        <Text style={styles.link}>Back to Home</Text>
-      </TouchableOpacity>
-
-      <Text style={styles.footer}>iDanda • Connecting people through jobs & services</Text>
-    </View>
+            <View style={styles.linksRow}>
+              <TouchableOpacity onPress={() => router.push('/signup')}>
+                <Text style={styles.link}>Sign Up</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => router.replace('/')}>
+                <Text style={styles.link}>Home</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  background: {
     flex: 1,
-    backgroundColor: '#e9f0fc',
+  },
+  safe: {
+    flex: 1,
+  },
+  scroll: {
+    flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 30,
+    padding: 20,
+  },
+  card: {
+    width: CARD_WIDTH,
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 6,
   },
   logo: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    borderWidth: 3,
+    width: 100,
+    height: 100,
+    marginBottom: 16,
+    borderRadius: 50,
+    borderWidth: 2,
     borderColor: '#4C8BF5',
-    marginBottom: 20,
     backgroundColor: '#fff',
   },
   title: {
-    fontSize: 30,
-    fontWeight: '800',
+    fontSize: 24,
+    fontWeight: '700',
     color: '#333',
-    marginBottom: 5,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#666',
-    marginBottom: 40,
-    textAlign: 'center',
+    marginBottom: 24,
   },
-  inputContainer: {
+  inputWrapper: {
     width: '100%',
-    backgroundColor: '#fff',
+    marginBottom: 16,
     borderRadius: 12,
-    borderColor: '#ddd',
     borderWidth: 1,
-    marginBottom: 20,
-    paddingHorizontal: 15,
-    paddingVertical: 10,
+    borderColor: '#ddd',
+    backgroundColor: '#f9f9f9',
   },
   input: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     fontSize: 16,
     color: '#333',
   },
-  gradientButton: {
-    width: '100%',
-    borderRadius: 30,
-    marginTop: 10,
-    // ✅ Clearly updated to fix warnings
-    boxShadow: '0px 5px 10px rgba(76, 139, 245, 0.3)',
-    elevation: 3, // Keeps native Android shadow
+  loginBtn: {
+    width: BUTTON_WIDTH,      // 90% of the screen width
+    alignSelf: 'center',
+    backgroundColor: '#4C8BF5',
+    borderRadius: 8,
+    paddingVertical: 14,
+    marginTop: 8,
+    shadowColor: '#4C8BF5',
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 6,
+    elevation: 4,
   },
-  innerGradient: {
-    borderRadius: 30,
-    paddingVertical: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonText: {
+  loginText: {
     color: '#fff',
     fontSize: 18,
     fontWeight: '700',
+    textAlign: 'center',
+  },
+  linksRow: {
+    flexDirection: 'row',
+    marginTop: 16,
+    justifyContent: 'space-between',
+    width: '100%',
   },
   link: {
-    marginTop: 20,
     color: '#4C8BF5',
-    fontSize: 16,
+    fontSize: 14,
     textDecorationLine: 'underline',
-  },
-  footer: {
-    marginTop: 40,
-    fontSize: 12,
-    color: '#999',
-    textAlign: 'center',
   },
 });
