@@ -1,24 +1,39 @@
-import React, { useEffect } from 'react';
-import { Slot, useRouter } from 'expo-router';
+// app/_layout.tsx
+import React, { useEffect, useState } from 'react';
+import { Slot } from 'expo-router';
 import { auth } from '../services/firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
+import { View, ActivityIndicator } from 'react-native';
+import { useRouter } from 'expo-router';
 
 export default function RootLayout() {
   const router = useRouter();
+  const [init, setInit] = useState(true);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, user => {
-      // wait one tick so Slot is mounted
-      setTimeout(() => {
+      if (init) {
+        // first time: just finish loading
+        setInit(false);
+      } else {
+        // thereafter: redirect on login/logout
         if (user && user.emailVerified) {
-          router.replace({ pathname: '/tabs/home' });
+          router.replace('/tabs/home');
         } else {
-          router.replace({ pathname: '/login' });
+          router.replace('/login');
         }
-      }, 0);
+      }
     });
     return unsub;
-  }, []);
+  }, [init, router]);
+
+  if (init) {
+    return (
+      <View style={{flex:1,justifyContent:'center',alignItems:'center'}}>
+        <ActivityIndicator size="large" color="#4C8BF5" />
+      </View>
+    );
+  }
 
   return <Slot />;
 }

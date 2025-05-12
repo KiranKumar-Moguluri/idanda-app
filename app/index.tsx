@@ -1,47 +1,116 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
-import { useRouter } from 'expo-router';
+// app/index.tsx
+import React, { useEffect, useState } from 'react';
+import {
+  SafeAreaView,
+  ScrollView,
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Image,
+  Dimensions,
+  ActivityIndicator,
+} from 'react-native';
+import { Redirect, useRouter } from 'expo-router';
+import { auth } from '../services/firebaseConfig';
+import { onAuthStateChanged } from 'firebase/auth';
 
-export default function LandingPage() {
+const { width } = Dimensions.get('window');
+const CARD_WIDTH = Math.min(width * 0.95, 540);
+
+export default function Index() {
   const router = useRouter();
+  const [user, setUser] = useState<any>(undefined);
 
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, u => setUser(u));
+    return unsub;
+  }, []);
+
+  // 1) still loading?
+  if (user === undefined) {
+    return (
+      <View style={styles.loaderContainer}>
+        <ActivityIndicator size="large" color="#4C8BF5" />
+      </View>
+    );
+  }
+
+  // 2) authenticated & verified → home
+  if (user && user.emailVerified) {
+    return <Redirect href="/tabs/home" />;
+  }
+
+  // 3) otherwise show landing page
   return (
-    <View style={styles.container}>
-      {/* ✅ Circular Logo */}
-      <Image source={require('../assets/logo.png')} style={styles.logo} />
+    <SafeAreaView style={styles.safe}>
+      <ScrollView contentContainerStyle={styles.scroll}>
+        <View style={styles.card}>
+          <Image
+            source={require('../assets/logo.png')}
+            style={styles.logo}
+          />
+          <Text style={styles.title}>Welcome to iDanda</Text>
+          <Text style={styles.subtitle}>
+            Find Jobs. Post Tasks. Connect Easily.
+          </Text>
 
-      <Text style={styles.title}>Welcome to iDanda</Text>
-      <Text style={styles.subtitle}>Find Jobs. Post Tasks. Connect Easily.</Text>
+          <TouchableOpacity
+            style={styles.button}
+            onPress={() => router.push('/signup')}
+          >
+            <Text style={styles.buttonText}>Sign Up</Text>
+          </TouchableOpacity>
 
-      <TouchableOpacity style={styles.button} onPress={() => router.push('/signup')}>
-        <Text style={styles.buttonText}>Sign Up</Text>
-      </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.button, styles.secondaryButton]}
+            onPress={() => router.push('/login')}
+          >
+            <Text style={styles.secondaryButtonText}>Login</Text>
+          </TouchableOpacity>
 
-      <TouchableOpacity style={[styles.button, styles.secondaryButton]} onPress={() => router.push('/login')}>
-        <Text style={styles.secondaryButtonText}>Login</Text>
-      </TouchableOpacity>
-
-      <Text style={styles.footer}>Empowering people to earn and help each other.</Text>
-    </View>
+          <Text style={styles.footer}>
+            Empowering people to earn and help each other.
+          </Text>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  loaderContainer: {
     flex: 1,
-    backgroundColor: '#f6f7fb',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  safe: { flex: 1, backgroundColor: '#f6f7fb' },
+  scroll: {
+    flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 30,
+    paddingVertical: 20,
+  },
+  card: {
+    width: CARD_WIDTH,
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 6,
   },
   logo: {
     width: 150,
     height: 150,
-    borderRadius: 75,               // ✅ Circle shape
-    borderWidth: 4,                 // Optional: Clean border
-    borderColor: '#4C8BF5',         // Matches your theme color
-    backgroundColor: '#fff',        // Clean white inside the circle
-    overflow: 'hidden',             // Makes sure the logo stays inside the circle
+    borderRadius: 75,
+    borderWidth: 4,
+    borderColor: '#4C8BF5',
+    backgroundColor: '#fff',
     marginBottom: 30,
   },
   title: {
@@ -62,7 +131,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 50,
     borderRadius: 12,
     marginTop: 10,
-    width: '80%',
+    width: '100%',
     alignItems: 'center',
     shadowColor: '#4C8BF5',
     shadowOpacity: 0.3,
@@ -79,6 +148,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderColor: '#4C8BF5',
     borderWidth: 2,
+    marginTop: 12,
   },
   secondaryButtonText: {
     color: '#4C8BF5',

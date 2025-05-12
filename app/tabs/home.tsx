@@ -1,5 +1,6 @@
 // app/(tabs)/home.tsx
-import React, { useEffect, useState, useRef } from 'react';
+
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,10 +8,7 @@ import {
   StyleSheet,
   FlatList,
   ActivityIndicator,
-  Dimensions,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
+  Dimensions
 } from 'react-native';
 import { Redirect, useRouter } from 'expo-router';
 import { auth, db } from '../../services/firebaseConfig';
@@ -23,14 +21,15 @@ import {
   updateDoc,
   arrayUnion,
   Timestamp,
-  getDoc,
-  serverTimestamp,
-  setDoc,
-  addDoc,
+  getDoc
 } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import { showError } from '../../utils/errorHandler';
-import ChatDrawer from './ChatDrawer'; 
+import ChatDrawer from './ChatDrawer';
+
+const { width } = Dimensions.get('window');
+const CARD_WIDTH = Math.min(width * 0.9, 600);
+const CARD_MIN_HEIGHT = 180;
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -41,7 +40,7 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [creatorNames, setCreatorNames] = useState<Record<string, string>>({});
 
-  // chat drawer state
+  // Chat drawer state
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [activeOtherId, setActiveOtherId] = useState<string | null>(null);
@@ -66,17 +65,23 @@ export default function HomeScreen() {
         getDoc(doc(db, 'users', uid))
           .then(snap => {
             if (snap.exists()) {
-              const { firstName, lastName } = snap.data();
-              setCreatorNames(prev => ({ ...prev, [uid]: `${firstName} ${lastName}` }));
+              const { firstName, lastName } = snap.data() as any;
+              setCreatorNames(prev => ({
+                ...prev,
+                [uid]: `${firstName} ${lastName}`
+              }));
             } else {
               setCreatorNames(prev => ({ ...prev, [uid]: 'Unknown' }));
             }
           })
-          .catch(() => setCreatorNames(prev => ({ ...prev, [uid]: 'Unknown' })));
+          .catch(() =>
+            setCreatorNames(prev => ({ ...prev, [uid]: 'Unknown' }))
+          );
       }
     });
   }, [posts]);
 
+  // Show interest
   const handleAccept = async (postId: string, interested: string[]) => {
     if (interested.includes(currentUser.uid)) return;
     try {
@@ -88,6 +93,7 @@ export default function HomeScreen() {
     }
   };
 
+  // Human‑friendly “time ago”
   const formatTimeAgo = (ts?: Timestamp | null) => {
     if (!ts?.seconds) return 'Just now';
     const diff = Timestamp.now().seconds - ts.seconds;
@@ -97,6 +103,7 @@ export default function HomeScreen() {
     return `${Math.floor(diff / 86400)}d ago`;
   };
 
+  // Open chat drawer
   const openChat = (otherId: string) => {
     const chatId = [currentUser.uid, otherId].sort().join('_');
     setActiveChatId(chatId);
@@ -121,49 +128,56 @@ export default function HomeScreen() {
         </View>
 
         {/* Body */}
-        <Text style={styles.bodyText} numberOfLines={5} ellipsizeMode="tail">
+        <Text
+          style={styles.bodyText}
+          numberOfLines={5}
+          ellipsizeMode="tail"
+        >
           {item.description}
         </Text>
 
-        {/* Footer */}
-        <View
-          style={[
-            styles.footer,
-            isCreator
-              ? { justifyContent: 'flex-start' }
-              : { justifyContent: 'space-between' },
-          ]}
-        >
+        {/* Footer: Accept / Interested */}
+        <View style={styles.footer}>
           {isCreator ? (
             <Text style={styles.count}>
               {item.interestedUsers?.length || 0} interested
             </Text>
           ) : (
-            <>
-              <TouchableOpacity
-                style={[styles.button, already && styles.buttonDisabled]}
-                disabled={already}
-                onPress={() => handleAccept(item.id, item.interestedUsers || [])}
+            <TouchableOpacity
+              style={[styles.button, already && styles.buttonDisabled]}
+              disabled={already}
+              onPress={() =>
+                handleAccept(item.id, item.interestedUsers || [])
+              }
+            >
+              <Ionicons
+                name={already ? 'checkmark-circle' : 'heart-outline'}
+                size={20}
+                color={already ? '#4CAF50' : '#555'}
+              />
+              <Text
+                style={[
+                  styles.buttonText,
+                  already && styles.buttonTextDisabled,
+                ]}
               >
-                <Ionicons
-                  name={already ? 'checkmark-circle' : 'heart-outline'}
-                  size={20}
-                  color={already ? '#4CAF50' : '#555'}
-                />
-                <Text style={[styles.buttonText, already && styles.buttonTextDisabled]}>
-                  {already ? 'Accepted' : 'Accept'}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.messageButton}
-                onPress={() => openChat(item.creatorId)}
-              >
-                <Text style={styles.messageText}>Message</Text>
-              </TouchableOpacity>
-            </>
+                {already ? 'Accepted' : 'Accept'}
+              </Text>
+            </TouchableOpacity>
           )}
         </View>
+
+        {/* Message button under “Accepted” */}
+        {!isCreator && already && (
+          <View style={styles.messageRow}>
+            <TouchableOpacity
+              style={styles.messageButton}
+              onPress={() => openChat(item.creatorId)}
+            >
+              <Text style={styles.messageText}>Message</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     );
   };
@@ -193,10 +207,6 @@ export default function HomeScreen() {
   );
 }
 
-const { width, height } = Dimensions.get('window');
-const CARD_WIDTH      = Math.min(width * 0.9, 600);
-const CARD_MIN_HEIGHT = 180;
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f2f3f5' },
   list: {
@@ -204,6 +214,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   empty: { textAlign: 'center', marginTop: 20, color: '#999' },
+
   card: {
     width: CARD_WIDTH,
     minHeight: CARD_MIN_HEIGHT,
@@ -218,18 +229,24 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 3,
   },
+
   header: { flexDirection: 'row', marginBottom: 12 },
   headerText: { marginLeft: 12, justifyContent: 'center' },
   username: { fontSize: 16, fontWeight: '600', color: '#333' },
   time: { fontSize: 12, color: '#777', marginTop: 4 },
+
   bodyText: {
     fontSize: 14,
     color: '#444',
     lineHeight: 20,
     marginBottom: 12,
   },
-  footer: { flexDirection: 'row', alignItems: 'center' },
 
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
   button: { flexDirection: 'row', alignItems: 'center' },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { marginLeft: 6, color: '#555', fontSize: 14 },
@@ -237,12 +254,19 @@ const styles = StyleSheet.create({
 
   count: { fontSize: 12, color: '#777' },
 
+  messageRow: {
+    marginTop: 8,
+    paddingHorizontal: 16,   // match card padding
+    alignItems: 'flex-start',
+  },
   messageButton: {
+    backgroundColor: '#4C8BF5',
     paddingVertical: 6,
     paddingHorizontal: 12,
-    backgroundColor: '#4C8BF5',
     borderRadius: 8,
-    alignItems: 'center',
   },
-  messageText: { color: '#fff', fontWeight: '600' },
+  messageText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
 });

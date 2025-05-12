@@ -1,196 +1,194 @@
+// app/chat/[chatId].tsx
 import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
+  TouchableOpacity,
   FlatList,
   TextInput,
-  TouchableOpacity,
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  SafeAreaView,
 } from 'react-native';
-import { useLocalSearchParams, Redirect, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { auth, db } from '../../services/firebaseConfig';
 import {
-  doc,
-  getDoc,
-  setDoc,
   collection,
-  query,
-  orderBy,
-  onSnapshot,
+  doc,
   addDoc,
-  serverTimestamp,
-  updateDoc,
+  getDoc,
+  onSnapshot,
+  orderBy,
+  query,
+  Timestamp,
 } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function ChatScreen() {
-  const { chatId, postId } =
-    useLocalSearchParams<{ chatId: string; postId: string }>();
   const router = useRouter();
-  const user = auth.currentUser;
-  if (!user) return <Redirect href="/login" />;
+  const { chatId, postId } = useLocalSearchParams<{ chatId: string; postId: string }>();
+  const currentUser = auth.currentUser!;
+  const [messages, setMessages] = useState<any[]>([]);
+  const [text, setText] = useState('');
+  const flatListRef = useRef<FlatList>(null);
 
-  const [otherUserId, setOtherUserId] = useState<string | null>(null);
-  const [otherName, setOtherName]     = useState('…');
-  const [messages, setMessages]       = useState<any[]>([]);
-  const [text, setText]               = useState('');
-  const flatRef = useRef<FlatList>(null);
-
-  // 1) Ensure chat doc exists & set both participants
+  // subscribe to messages
   useEffect(() => {
-    if (!chatId) return;
-    const uids = chatId.split('_');
-    const other = uids.find(uid => uid !== user.uid) || null;
-    setOtherUserId(other);
-
-    const chatRef = doc(db, 'chats', chatId);
-    setDoc(
-      chatRef,
-      {
-        postId,
-        participants: uids,
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true } // merge so we don’t overwrite messages
+    const q = query(
+      collection(db, 'chats', chatId, 'messages'),
+      orderBy('createdAt', 'asc')
     );
-  }, [chatId]);
-
-  // 2) Lookup the other user’s name
-  useEffect(() => {
-    if (!otherUserId) return;
-    getDoc(doc(db, 'users', otherUserId))
-      .then(snap => {
-        if (snap.exists()) {
-          const { firstName, lastName } = snap.data();
-          setOtherName(`${firstName} ${lastName}`);
-        } else {
-          setOtherName('Unknown');
-        }
-      })
-      .catch(() => setOtherName('Unknown'));
-  }, [otherUserId]);
-
-  // 3) Subscribe to messages
-  useEffect(() => {
-    if (!chatId) return;
-    const msgsRef = collection(db, 'chats', chatId, 'messages');
-    const q = query(msgsRef, orderBy('createdAt', 'asc'));
-    const unsub = onSnapshot(q, snap => {
-      const arr: any[] = [];
-      snap.forEach(d => arr.push({ id: d.id, ...d.data() }));
-      setMessages(arr);
-      setTimeout(() => flatRef.current?.scrollToEnd({ animated: true }), 50);
+    return onSnapshot(q, snap => {
+      setMessages(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+      // scroll to bottom when new messages arrive
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     });
-    return unsub;
   }, [chatId]);
 
-  const sendMessage = async () => {
-    if (!text.trim() || !chatId) return;
-    const msgsRef = collection(db, 'chats', chatId, 'messages');
-    await addDoc(msgsRef, {
+  // send a message (only if confirmed)
+  const handleSend = async () => {
+    if (!text.trim()) return;
+    // check confirmation from post
+    const postSnap = await getDoc(doc(db, 'posts', postId));
+    const confirmed: string[] = postSnap.data()?.confirmedUserIds || [];
+    if (!confirmed.includes(currentUser.uid)) {
+      return alert('Waiting for confirmation from the post owner.');
+    }
+    await addDoc(collection(db, 'chats', chatId, 'messages'), {
+      senderId: currentUser.uid,
       text: text.trim(),
-      senderId: user.uid,
-      createdAt: serverTimestamp(),
-    });
-    await updateDoc(doc(db, 'chats', chatId), {
-      updatedAt: serverTimestamp(),
+      createdAt: Timestamp.now(),
     });
     setText('');
   };
 
+  const renderItem = ({ item }: { item: any }) => {
+    const isMe = item.senderId === currentUser.uid;
+    const containerStyle = isMe ? styles.bubbleRight : styles.bubbleLeft;
+    const textStyle = isMe ? styles.textRight : styles.textLeft;
+    const time = item.createdAt
+      ? new Date(item.createdAt.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : '';
+    return (
+      <View style={[styles.bubbleContainer, isMe && { justifyContent: 'flex-end' }]}>
+        <View style={[styles.bubble, containerStyle]}>
+          <Text style={textStyle}>{item.text}</Text>
+          <Text style={styles.timestamp}>{time}</Text>
+        </View>
+      </View>
+    );
+  };
+
   return (
-    <View style={styles.flex}>
-      {/* Header */}
-      <View style={styles.headerBar}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={24} color="#333" />
+    <SafeAreaView style={styles.safe}>
+      {/* HEADER */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn}>
+          <Ionicons name="close" size={24} color="#333" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{otherName}</Text>
+        <Text style={styles.headerTitle}>Chat</Text>
       </View>
 
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.select({ ios: 'padding', android: undefined })}
-      >
-        <FlatList
-          ref={flatRef}
-          data={messages}
-          keyExtractor={i => i.id}
-          contentContainerStyle={styles.list}
-          renderItem={({ item }) => {
-            const mine = item.senderId === user.uid;
-            return (
-              <View style={[styles.bubble, mine ? styles.mine : styles.theirs]}>
-                <Text style={[styles.msgText, mine && { color: '#fff' }]}>
-                  {item.text}
-                </Text>
-              </View>
-            );
-          }}
-        />
+      {/* MESSAGE LIST */}
+      <FlatList
+        ref={flatListRef}
+        data={messages}
+        keyExtractor={i => i.id}
+        renderItem={renderItem}
+        contentContainerStyle={styles.messageList}
+        showsVerticalScrollIndicator={false}
+      />
 
+      {/* INPUT FOOTER */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={80}
+      >
         <View style={styles.inputRow}>
           <TextInput
             style={styles.input}
-            placeholder="Type a message…"
+            placeholder="Write a message…"
             value={text}
             onChangeText={setText}
           />
-          <TouchableOpacity style={styles.sendBtn} onPress={sendMessage}>
-            <Text style={styles.sendText}>Send</Text>
+          <TouchableOpacity onPress={handleSend} style={styles.sendBtn}>
+            <Ionicons name="send" size={22} color="#4C8BF5" />
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  flex:      { flex: 1, backgroundColor: '#f2f3f5' },
-  headerBar: {
+  safe: { flex: 1, backgroundColor: '#f2f3f5' },
+
+  header: {
     height: 56,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
     borderBottomWidth: 1,
     borderColor: '#ddd',
+    paddingHorizontal: 12,
     backgroundColor: '#fff',
   },
-  headerTitle: { flex: 1, textAlign: 'center', fontSize: 18, fontWeight: '600' },
-
-  list: { padding: 12 },
-  bubble: {
-    marginVertical: 4,
-    padding: 10,
-    borderRadius: 8,
-    maxWidth: '80%',
+  closeBtn: { padding: 4 },
+  headerTitle: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
   },
-  mine:   { backgroundColor: '#4C8BF5', alignSelf: 'flex-end' },
-  theirs: { backgroundColor: '#fff', alignSelf: 'flex-start' },
-  msgText: { color: '#333' },
+
+  messageList: { padding: 12, paddingBottom: 0 },
+
+  bubbleContainer: {
+    marginBottom: 8,
+    flexDirection: 'row',
+  },
+  bubble: {
+    maxWidth: '75%',
+    padding: 10,
+    borderRadius: 12,
+  },
+  bubbleLeft: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 0,
+  },
+  bubbleRight: {
+    backgroundColor: '#4C8BF5',
+    borderTopRightRadius: 0,
+  },
+  textLeft: { color: '#333', fontSize: 14 },
+  textRight: { color: '#fff', fontSize: 14 },
+  timestamp: {
+    marginTop: 4,
+    fontSize: 10,
+    color: '#666',
+    textAlign: 'right',
+  },
 
   inputRow: {
     flexDirection: 'row',
-    padding: 8,
+    alignItems: 'center',
+    backgroundColor: '#fff',
     borderTopWidth: 1,
     borderColor: '#ddd',
-    backgroundColor: '#fff',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
   },
   input: {
     flex: 1,
-    backgroundColor: '#f6f7fb',
+    height: 40,
+    backgroundColor: '#f0f0f0',
     borderRadius: 20,
-    paddingHorizontal: 15,
+    paddingHorizontal: 12,
+    fontSize: 14,
+    marginRight: 8,
   },
   sendBtn: {
-    marginLeft: 8,
-    backgroundColor: '#4C8BF5',
-    borderRadius: 20,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    justifyContent: 'center',
+    padding: 6,
   },
-  sendText: { color: '#fff', fontWeight: '600' },
 });
