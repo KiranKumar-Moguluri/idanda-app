@@ -23,6 +23,7 @@ import {
   addDoc,
   serverTimestamp,
   updateDoc,
+  arrayUnion,
 } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -64,7 +65,15 @@ export default function ChatDrawer({ chatId, otherUserId, onClose }: ChatDrawerP
     const q = query(msgsRef, orderBy('createdAt', 'asc'));
     const unsub = onSnapshot(q, snap => {
       const arr: any[] = [];
-      snap.forEach(d => arr.push({ id: d.id, ...d.data() }));
+      const updates: Promise<void>[] = [];
+      snap.forEach(d => {
+        const data = d.data();
+        arr.push({ id: d.id, ...data });
+        if (!data.readBy?.includes(user.uid)) {
+          updates.push(updateDoc(d.ref, { readBy: arrayUnion(user.uid) }));
+        }
+      });
+      if (updates.length) Promise.all(updates);
       setMessages(arr);
       setTimeout(() => flatRef.current?.scrollToEnd({ animated: true }), 50);
     });
@@ -78,6 +87,7 @@ export default function ChatDrawer({ chatId, otherUserId, onClose }: ChatDrawerP
       text: text.trim(),
       senderId: user.uid,
       createdAt: serverTimestamp(),
+      readBy: [user.uid],
     });
     await updateDoc(doc(db, 'chats', chatId), { updatedAt: serverTimestamp() });
     setText('');
@@ -109,11 +119,13 @@ export default function ChatDrawer({ chatId, otherUserId, onClose }: ChatDrawerP
             contentContainerStyle={drawerStyles.list}
             renderItem={({ item }) => {
               const mine = item.senderId === user.uid;
+              const read = item.readBy?.includes(otherUserId);
               return (
                 <View style={[drawerStyles.bubble, mine ? drawerStyles.mine : drawerStyles.theirs]}>
-                  <Text style={[drawerStyles.msgText, mine && { color: '#fff' }]}>
-                    {item.text}
-                  </Text>
+                  <Text style={[drawerStyles.msgText, mine && { color: '#fff' }]}> {item.text} </Text>
+                  {mine && read && (
+                    <Ionicons name="checkmark-done" size={12} color="#fff" style={drawerStyles.readIcon} />
+                  )}
                 </View>
               );
             }}
@@ -175,6 +187,7 @@ const drawerStyles = StyleSheet.create({
   mine: { backgroundColor: '#4C8BF5', alignSelf: 'flex-end' },
   theirs: { backgroundColor: '#fff', alignSelf: 'flex-start' },
   msgText: { color: '#333' },
+  readIcon: { alignSelf: 'flex-end', marginTop: 2 },
 
   inputRow: {
     flexDirection: 'row',

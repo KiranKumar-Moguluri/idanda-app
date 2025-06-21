@@ -22,6 +22,8 @@ import {
   orderBy,
   query,
   Timestamp,
+  updateDoc,
+  arrayUnion,
 } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -32,6 +34,9 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState<any[]>([]);
   const [text, setText] = useState('');
   const flatListRef = useRef<FlatList>(null);
+  const otherId = chatId
+    .split('_')
+    .find(id => id !== postId && id !== currentUser.uid) || '';
 
   // subscribe to messages
   useEffect(() => {
@@ -40,7 +45,17 @@ export default function ChatScreen() {
       orderBy('createdAt', 'asc')
     );
     return onSnapshot(q, snap => {
-      setMessages(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+      const arr: any[] = [];
+      const updates: Promise<void>[] = [];
+      snap.forEach(d => {
+        const data = d.data() as any;
+        arr.push({ id: d.id, ...data });
+        if (!data.readBy?.includes(currentUser.uid)) {
+          updates.push(updateDoc(d.ref, { readBy: arrayUnion(currentUser.uid) }));
+        }
+      });
+      if (updates.length) Promise.all(updates);
+      setMessages(arr);
       // scroll to bottom when new messages arrive
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     });
@@ -59,6 +74,7 @@ export default function ChatScreen() {
       senderId: currentUser.uid,
       text: text.trim(),
       createdAt: Timestamp.now(),
+      readBy: [currentUser.uid],
     });
     setText('');
   };
@@ -70,10 +86,14 @@ export default function ChatScreen() {
     const time = item.createdAt
       ? new Date(item.createdAt.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       : '';
+    const read = item.readBy?.includes(otherId);
     return (
       <View style={[styles.bubbleContainer, isMe && { justifyContent: 'flex-end' }]}>
         <View style={[styles.bubble, containerStyle]}>
           <Text style={textStyle}>{item.text}</Text>
+          {isMe && read && (
+            <Ionicons name="checkmark-done" size={12} color="#fff" style={styles.readIcon} />
+          )}
           <Text style={styles.timestamp}>{time}</Text>
         </View>
       </View>
@@ -169,6 +189,7 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'right',
   },
+  readIcon: { alignSelf: 'flex-end', marginTop: 2 },
 
   inputRow: {
     flexDirection: 'row',
